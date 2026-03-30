@@ -21,7 +21,7 @@ class EXMPLifeCycle(LifeCycle[[int, int], int]):
 app = App()
 TM = TracerManager[[int, int], int, EXMPLifeCycle](EXMPLifeCycle, app)
 
-@TM.tracing
+@TM.async_tracing
 async def outer_func(arg1: int, arg2: int) -> int:
     instance = outer_func.here()
     instance.trace = "outer"
@@ -30,7 +30,7 @@ async def outer_func(arg1: int, arg2: int) -> int:
     result = await inner_func(arg1, arg2)
     return result
 
-@TM.tracing
+@TM.async_tracing
 async def inner_func(arg1: int, arg2: int) -> int:
     instance = inner_func.here()
     instance.trace = "inner"
@@ -94,4 +94,7 @@ async def inner_async_exception_hook(lifecycle: EXMPLifeCycle):
 print("=== 정상 케이스 ===")
 asyncio.run(outer_func(3, 5))
 print("\n=== 예외 케이스 ===")
-asyncio.run(outer_func(3, 0))
+try:
+    asyncio.run(outer_func(3, 0))
+except ZeroDivisionError as e:
+    print("정상 에러 :", e)

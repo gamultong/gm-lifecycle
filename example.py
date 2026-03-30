@@ -78,4 +78,7 @@ def inner_exception_hook(lifecycle: EXMPLifeCycle):
 print("=== 정상 케이스 ===")
 outer_func(3, 5)
 print("\n=== 예외 케이스 ===")
-outer_func(3, 0)
+try:
+    outer_func(3, 0)
+except ZeroDivisionError as e:
+    print("정상 에러 :", e)

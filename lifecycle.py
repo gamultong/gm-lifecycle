@@ -1,14 +1,27 @@
 from __future__ import annotations
 from typing import Callable, Any, ParamSpec, TypeVar, Generic, Type, Self
-from abc import abstractmethod
+from contextvars import ContextVar
+from abc import abstractmethod, ABC
 
 P = ParamSpec("P")
 R = TypeVar("R")
 
-class LifeCycle(Generic[P, R]):
+class APP:
+    def __init__(self):
+        self.trace_managers:list[TracerManager] = []
+        self._prev_lifecycle: ContextVar[LifeCycle|None] = ContextVar("__caller")
+        self._prev_lifecycle.set(None)
+
+
+class LifeCycle(Generic[P, R], ABC):
+    def __init__(self):
+        self.caller:LifeCycle|None = None
+        self.callees:list[LifeCycle] = []
+        self.exception:Exception|None = None
+    
     @classmethod
     @abstractmethod
-    def create(cls, *args: P.args, **kwds: P.kwargs) -> Self:
+    def create(cls, caller:LifeCycle|None, *args: P.args, **kwds: P.kwargs) -> Self:
         pass
 
     @abstractmethod
@@ -24,36 +37,55 @@ class Tracer(Generic[P, R, LIFECYCLE]):
         self.func = func
         self.hooks:list[Callable[[LIFECYCLE], Any]] = []
         self.manager = manager
-        self.__here = None # ContextVar로 변환 필요
 
     def add_hook(self, func:Callable[[LIFECYCLE], Any]):
         self.hooks.append(func)
 
-    def here(self):
-        assert self.__here is not None
-        return self.__here
+    def here(self) -> LIFECYCLE:
+        prev_lifecycle = self.manager.app._prev_lifecycle
+        caller = prev_lifecycle.get()
+        assert caller is not None, "이는 반드시 tracer 함수 실행 중 존재하며, 실행 내부에서만 가져올 수 있다."
+
+        return caller
 
     def __call__(self, *args: P.args, **kwds: P.kwargs) -> Any:
         lifecycle_type = self.manager.lifecycle_type
+        
+        prev_lifecycle = self.manager.app._prev_lifecycle
+        caller = prev_lifecycle.get()
+
         lifecycle = lifecycle_type.create(
+            caller,
             *args,
             **kwds
         )
-        self.__here = lifecycle
+
+        lifecycle.caller = caller
+        if caller is not None:
+            caller.callees.append(lifecycle)
         
-        return_value = self.func(*args, **kwds)
-        lifecycle.mm_return(return_value)
+        prev_lifecycle.set(lifecycle)
+
+        try:
+            return_value = self.func(*args, **kwds)
+            lifecycle.mm_return(return_value)
+        except Exception as e:
+            lifecycle.exception = e
+            raise 
+        finally:
+            prev_lifecycle.set(lifecycle.caller)
         
-        self.__here = None
         for hook in self.hooks:
             hook(lifecycle)
 
         return return_value
 
 class TracerManager(Generic[P, R, LIFECYCLE]):
-    def __init__(self, lifecycle_type:Type[LIFECYCLE]) -> None:
+    def __init__(self, lifecycle_type:Type[LIFECYCLE], app:APP) -> None:
         self.tracer:list[Tracer[P, R, LIFECYCLE]] = []
         self.lifecycle_type = lifecycle_type
+        self.app = app
+        app.trace_managers.append(self)
         
     def tracing(self, func: Callable[P, R]) -> Tracer[P, R, LIFECYCLE]:
         tracer = Tracer(func, self)

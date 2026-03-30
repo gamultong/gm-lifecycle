@@ -1,3 +1,5 @@
+# async_example.py
+import asyncio
 from lifecycle import TracerManager, LifeCycle, App
 
 class EXMPLifeCycle(LifeCycle[[int, int], int]):
@@ -20,21 +22,23 @@ app = App()
 TM = TracerManager[[int, int], int, EXMPLifeCycle](EXMPLifeCycle, app)
 
 @TM.tracing
-def outer_func(arg1: int, arg2: int) -> int:
+async def outer_func(arg1: int, arg2: int) -> int:
     instance = outer_func.here()
     instance.trace = "outer"
 
-    result = inner_func(arg1, arg2)
+    await asyncio.sleep(0.1)
+    result = await inner_func(arg1, arg2)
     return result
 
 @TM.tracing
-def inner_func(arg1: int, arg2: int) -> int:
+async def inner_func(arg1: int, arg2: int) -> int:
     instance = inner_func.here()
     instance.trace = "inner"
 
-    # caller 확인
+    await asyncio.sleep(0.1)
+
     print(f"[inner] caller: {instance.caller}")
-    print(f"[inner] caller.other_trace: {instance.caller.trace}")
+    print(f"[inner] caller.trace: {instance.caller.trace}")
     print(f"[inner] caller.arg: {instance.caller.arg}")
 
     return arg1 + arg2
@@ -57,4 +61,4 @@ def inner_hook(lifecycle: EXMPLifeCycle):
     print(f"[inner_hook] caller.trace: {lifecycle.caller.trace}")
     print(f"[inner_hook] callees: {lifecycle.callees}")
 
-outer_func(3, 5)
+asyncio.run(outer_func(3, 5))

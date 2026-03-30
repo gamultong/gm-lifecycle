@@ -9,7 +9,7 @@ R = TypeVar("R")
 
 class App:
     def __init__(self):
-        self.trace_managers: list[TracerManager[Any, Any, Any]] = []
+        self.trace_managers: list[TracerManager] = []
         self._prev_lifecycle: ContextVar[LifeCycle|None] = ContextVar("__caller")
         self._prev_lifecycle.set(None)
 

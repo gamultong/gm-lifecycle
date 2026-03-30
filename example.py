@@ -37,7 +37,7 @@ def inner_func(arg1: int, arg2: int) -> int:
     print(f"[inner] caller.other_trace: {instance.caller.trace}")
     print(f"[inner] caller.arg: {instance.caller.arg}")
 
-    return arg1 + arg2
+    return arg1 / arg2
 
 @outer_func.add_hook
 def outer_hook(lifecycle: EXMPLifeCycle):
@@ -57,4 +57,25 @@ def inner_hook(lifecycle: EXMPLifeCycle):
     print(f"[inner_hook] caller.trace: {lifecycle.caller.trace}")
     print(f"[inner_hook] callees: {lifecycle.callees}")
 
+@outer_func.add_exception_hook
+def outer_exception_hook(lifecycle: EXMPLifeCycle):
+    print(f"\n[outer_exception_hook] arg: {lifecycle.arg}")
+    print(f"[outer_exception_hook] trace: {lifecycle.trace}")
+    print(f"[outer_exception_hook] exception: {lifecycle.exception}")
+    print(f"[outer_exception_hook] caller: {lifecycle.caller}")
+    print(f"[outer_exception_hook] callees: {lifecycle.callees}")
+    print(f"[outer_exception_hook] callees[0].trace: {lifecycle.callees[0].trace}")
+
+@inner_func.add_exception_hook
+def inner_exception_hook(lifecycle: EXMPLifeCycle):
+    print(f"\n[inner_exception_hook] arg: {lifecycle.arg}")
+    print(f"[inner_exception_hook] trace: {lifecycle.trace}")
+    print(f"[inner_exception_hook] exception: {lifecycle.exception}")
+    print(f"[inner_exception_hook] caller: {lifecycle.caller}")
+    print(f"[inner_exception_hook] caller.trace: {lifecycle.caller.trace}")
+    print(f"[inner_exception_hook] callees: {lifecycle.callees}")
+
+print("=== 정상 케이스 ===")
 outer_func(3, 5)
+print("\n=== 예외 케이스 ===")
+outer_func(3, 0)

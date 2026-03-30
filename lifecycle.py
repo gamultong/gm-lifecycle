@@ -38,10 +38,22 @@ class Tracer(Generic[P, R, LIFECYCLE]):
         ) -> None:
         self.func = func
         self.hooks: list[Callable[[LIFECYCLE], Any]] = []
+        self.async_hooks: list[Callable[[LIFECYCLE], Any]] = []
+        self.exception_hooks: list[Callable[[LIFECYCLE], Any]] = []
+        self.async_exception_hooks: list[Callable[[LIFECYCLE], Any]] = []
         self.manager = manager
 
     def add_hook(self, func: Callable[[LIFECYCLE], Any]):
         self.hooks.append(func)
+
+    def add_async_hook(self, func: Callable[[LIFECYCLE], Any]):
+        self.async_hooks.append(func)
+
+    def add_exception_hook(self, func: Callable[[LIFECYCLE], Any]):
+        self.exception_hooks.append(func)
+
+    def add_async_exception_hook(self, func: Callable[[LIFECYCLE], Any]):
+        self.async_exception_hooks.append(func)
 
     def here(self) -> LIFECYCLE:
         prev_lifecycle = self.manager.app._prev_lifecycle
@@ -66,6 +78,22 @@ class Tracer(Generic[P, R, LIFECYCLE]):
         for hook in self.hooks:
             hook(lifecycle)
 
+    async def _run_async_hooks(self, lifecycle: LIFECYCLE):
+        for hook in self.hooks:
+            hook(lifecycle)
+        for hook in self.async_hooks:
+            await hook(lifecycle)
+
+    def _run_exception_hooks(self, lifecycle: LIFECYCLE):
+        for hook in self.exception_hooks:
+            hook(lifecycle)
+
+    async def _run_async_exception_hooks(self, lifecycle: LIFECYCLE):
+        for hook in self.exception_hooks:
+            hook(lifecycle)
+        for hook in self.async_exception_hooks:
+            await hook(lifecycle)
+
     def __call__(self, *args: P.args, **kwds: P.kwargs) -> Any:
         if inspect.iscoroutinefunction(self.func):
             return self._async_call(*args, **kwds)
@@ -76,28 +104,28 @@ class Tracer(Generic[P, R, LIFECYCLE]):
         try:
             return_value = self.func(*args, **kwds)
             lifecycle.mm_return(return_value)
+            self._run_hooks(lifecycle)
+            return return_value
         except Exception as e:
             lifecycle.exception = e
+            self._run_exception_hooks(lifecycle)
             raise
         finally:
             prev_lifecycle.set(lifecycle.caller)
-        self._run_hooks(lifecycle)
-
-        return return_value
 
     async def _async_call(self, *args, **kwds) -> Any:
         lifecycle, prev_lifecycle = self._setup(*args, **kwds)
         try:
             return_value = await self.func(*args, **kwds)
             lifecycle.mm_return(return_value)
+            await self._run_async_hooks(lifecycle)
+            return return_value
         except Exception as e:
             lifecycle.exception = e
+            await self._run_async_exception_hooks(lifecycle)
             raise
         finally:
             prev_lifecycle.set(lifecycle.caller)
-        self._run_hooks(lifecycle)
-
-        return return_value
 
 
 class TracerManager(Generic[P, R, LIFECYCLE]):

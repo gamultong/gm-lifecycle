@@ -1,14 +1,4 @@
-# lifecycle
-
-함수의 실행 주기를 객체로 표현하는 Python 라이브러리입니다.
-
-## 설치
-
-```bash
-pip install lifecycle
-```
-
-## 개요
+# lifecycle 모듈 API
 
 `lifecycle`은 함수 호출 한 번을 하나의 객체(LifeCycle)로 표현합니다. 이를 통해 함수 실행 중 정보를 기록하고, 함수 간 호출 관계를 추적하며, 실행 완료나 예외 발생 시점에 동작을 추가할 수 있습니다.
 
@@ -45,5 +35,5 @@ pip install lifecycle
 
 ## 튜토리얼
 
-- [동기 함수 예제](example.py)
-- [비동기 함수 예제](async_example.py)
+- [동기 함수 예제](docs/example.py)
+- [비동기 함수 예제](docs/async_example.py)

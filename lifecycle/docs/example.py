@@ -1,12 +1,10 @@
-# async_example.py
-import asyncio
 from lifecycle import TracerManager, LifeCycle, App
 
-class EXMPLifeCycle(LifeCycle[[int, int], int]):
+class EXMPLifeCycle(LifeCycle[[int, int], float]):
     def __init__(self):
         super().__init__()
         self.arg: tuple
-        self.return_value: int
+        self.return_value: float
         self.trace: str
     
     @classmethod
@@ -15,30 +13,28 @@ class EXMPLifeCycle(LifeCycle[[int, int], int]):
         instance.arg = (arg1, arg2)
         return instance
     
-    def mm_return(self, return_value: int):
+    def mm_return(self, return_value: float):
         self.return_value = return_value
 
 app = App()
-TM = TracerManager[[int, int], int, EXMPLifeCycle](EXMPLifeCycle, app)
+TM = TracerManager[[int, int], float, EXMPLifeCycle](EXMPLifeCycle, app)
 
-@TM.async_tracing
-async def outer_func(arg1: int, arg2: int) -> int:
+@TM.tracing
+def outer_func(arg1: int, arg2: int) -> float:
     instance = outer_func.here()
     instance.trace = "outer"
 
-    await asyncio.sleep(0.1)
-    result = await inner_func(arg1, arg2)
+    result = inner_func(arg1, arg2)
     return result
 
-@TM.async_tracing
-async def inner_func(arg1: int, arg2: int) -> int:
+@TM.tracing
+def inner_func(arg1: int, arg2: int) -> float:
     instance = inner_func.here()
     instance.trace = "inner"
 
-    await asyncio.sleep(0.1)
-
+    # caller 확인
     print(f"[inner] caller: {instance.caller}")
-    print(f"[inner] caller.trace: {instance.caller.trace}")
+    print(f"[inner] caller.other_trace: {instance.caller.trace}")
     print(f"[inner] caller.arg: {instance.caller.arg}")
 
     return arg1 / arg2
@@ -79,22 +75,10 @@ def inner_exception_hook(lifecycle: EXMPLifeCycle):
     print(f"[inner_exception_hook] caller.trace: {lifecycle.caller.trace}")
     print(f"[inner_exception_hook] callees: {lifecycle.callees}")
 
-@outer_func.add_async_exception_hook
-async def outer_async_exception_hook(lifecycle: EXMPLifeCycle):
-    await asyncio.sleep(0.01)
-    print(f"\n[outer_async_exception_hook] exception: {lifecycle.exception}")
-    print(f"[outer_async_exception_hook] trace: {lifecycle.trace}")
-
-@inner_func.add_async_exception_hook
-async def inner_async_exception_hook(lifecycle: EXMPLifeCycle):
-    await asyncio.sleep(0.01)
-    print(f"\n[inner_async_exception_hook] exception: {lifecycle.exception}")
-    print(f"[inner_async_exception_hook] trace: {lifecycle.trace}")
-
 print("=== 정상 케이스 ===")
-asyncio.run(outer_func(3, 5))
+outer_func(3, 5)
 print("\n=== 예외 케이스 ===")
 try:
-    asyncio.run(outer_func(3, 0))
+    outer_func(3, 0)
 except ZeroDivisionError as e:
     print("정상 에러 :", e)

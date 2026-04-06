@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gm-lifecycle"
+version = "0.1.0"
+description = "함수의 실행 주기를 객체로 추적하는 Python 라이브러리"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+[tool.setuptools.packages.find]
+exclude = ["lifecycle.test*", "lifecycle.docs*"]

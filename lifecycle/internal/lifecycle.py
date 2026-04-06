@@ -6,7 +6,6 @@ from abc import abstractmethod, ABC
 P = ParamSpec("P")
 R = TypeVar("R")
 
-
 class App:
     def __init__(self):
         self.trace_managers: list[TracerManager] = []
@@ -30,13 +29,11 @@ class LifeCycle(Generic[P, R], ABC):
         pass
 
 LIFECYCLE = TypeVar("LIFECYCLE", bound=LifeCycle)
+CALLER = TypeVar("CALLER", bound=LifeCycle)
+CALLEE = TypeVar("CALLEE", bound=LifeCycle)
 
-
-class Tracer(Generic[P, R, LIFECYCLE]):
-    def __init__(self, func: Callable[P, R],
-                 manager: TracerManager[P, R, LIFECYCLE]
-        ) -> None:
-        self.func = func
+class BaseTracer(Generic[LIFECYCLE]):
+    def __init__(self, manager: TracerManager[LIFECYCLE]) -> None:
         self.hooks: list[Callable[[LIFECYCLE], Any]] = []
         self.exception_hooks: list[Callable[[LIFECYCLE], Any]] = []
         self.manager = manager
@@ -67,6 +64,13 @@ class Tracer(Generic[P, R, LIFECYCLE]):
 
         prev_lifecycle.set(lifecycle)
         return lifecycle, prev_lifecycle  # type: ignore[return-value]
+
+class Tracer(BaseTracer[LIFECYCLE], Generic[P, R, LIFECYCLE]):
+    def __init__(self, func: Callable[P, R],
+                 manager: TracerManager[LIFECYCLE]
+        ) -> None:
+        super().__init__(manager)
+        self.func = func
 
     def _run_hooks(self, lifecycle: LIFECYCLE) -> None:
         for hook in self.hooks:
@@ -91,51 +95,22 @@ class Tracer(Generic[P, R, LIFECYCLE]):
             prev_lifecycle.set(lifecycle.caller)
 
 
-class AsyncTracer(Generic[P, R, LIFECYCLE]):
+class AsyncTracer(BaseTracer[LIFECYCLE], Generic[P, R, LIFECYCLE]):
     def __init__(self, func: Callable[P, Awaitable[R]],
-                 manager: TracerManager[P, R, LIFECYCLE]
+                 manager: TracerManager[LIFECYCLE]
         ) -> None:
+        super().__init__(manager)
         self.func = func
-        self.hooks: list[Callable[[LIFECYCLE], Any]] = []
         self.async_hooks: list[Callable[[LIFECYCLE], Awaitable[Any]]] = []
-        self.exception_hooks: list[Callable[[LIFECYCLE], Any]] = []
         self.async_exception_hooks: list[Callable[[LIFECYCLE], Awaitable[Any]]] = []
-        self.manager = manager
-
-    def add_hook(self, func: Callable[[LIFECYCLE], Any]) -> Callable[[LIFECYCLE], Any]:
-        self.hooks.append(func)
-        return func
 
     def add_async_hook(self, func: Callable[[LIFECYCLE], Awaitable[Any]]) -> Callable[[LIFECYCLE], Awaitable[Any]]:
         self.async_hooks.append(func)
         return func
 
-    def add_exception_hook(self, func: Callable[[LIFECYCLE], Any]) -> Callable[[LIFECYCLE], Any]:
-        self.exception_hooks.append(func)
-        return func
-
     def add_async_exception_hook(self, func: Callable[[LIFECYCLE], Awaitable[Any]]) -> Callable[[LIFECYCLE], Awaitable[Any]]:
         self.async_exception_hooks.append(func)
         return func
-
-    def here(self) -> LIFECYCLE:
-        prev_lifecycle = self.manager.app._prev_lifecycle
-        caller = prev_lifecycle.get()
-        assert caller is not None, "이는 반드시 tracer 함수 실행 중 존재하며, 실행 내부에서만 가져올 수 있다."
-        return caller  # type: ignore[return-value]
-
-    def _setup(self, *args: Any, **kwds: Any) -> tuple[LIFECYCLE, ContextVar[LifeCycle|None]]:
-        lifecycle_type = self.manager.lifecycle_type
-        prev_lifecycle = self.manager.app._prev_lifecycle
-        caller = prev_lifecycle.get()
-
-        lifecycle = lifecycle_type.create(caller, *args, **kwds)
-        lifecycle.caller = caller
-        if caller is not None:
-            caller.callees.append(lifecycle)
-
-        prev_lifecycle.set(lifecycle)
-        return lifecycle, prev_lifecycle  # type: ignore[return-value]
 
     async def _run_hooks(self, lifecycle: LIFECYCLE) -> None:
         for hook in self.hooks:
@@ -167,9 +142,9 @@ class AsyncTracer(Generic[P, R, LIFECYCLE]):
             prev_lifecycle.set(lifecycle.caller)
 
 
-class TracerManager(Generic[P, R, LIFECYCLE]):
+class TracerManager(Generic[LIFECYCLE]):
     def __init__(self, lifecycle_type: Type[LIFECYCLE], app: App) -> None:
-        self.tracer: list[Tracer[P, R, LIFECYCLE] | AsyncTracer[P, R, LIFECYCLE]] = []
+        self.tracer: list[BaseTracer[LIFECYCLE]] = []
         self.lifecycle_type = lifecycle_type
         self.app = app
         app.trace_managers.append(self)

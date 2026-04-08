@@ -1,7 +1,6 @@
 from __future__ import annotations
-from typing import Callable, Any, ParamSpec, TypeVar, Generic, Type, Self, Awaitable
+from typing import Callable, Any, ParamSpec, TypeVar, Generic, Type, Awaitable, Coroutine
 from contextvars import ContextVar
-from abc import abstractmethod, ABC
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -13,24 +12,29 @@ class App:
         self._prev_lifecycle.set(None)
 
 
-class LifeCycle(Generic[P, R], ABC):
+class LifeCycle(Generic[P, R]):
     def __init__(self):
-        self.caller: LifeCycle|None = None
+        self.caller: LifeCycle | None = None
         self.callees: list[LifeCycle] = []
-        self.exception: Exception|None = None
+        self.exception: Exception | None = None
+        self.args: tuple = ()
+        self.kwargs: dict = {}
+        self.return_value: R
 
-    @classmethod
-    @abstractmethod
-    def create(cls, caller: LifeCycle|None, *args: P.args, **kwds: P.kwargs) -> Self:
+    def on_enter(self, *args: P.args, **kwargs: P.kwargs) -> None:
         pass
 
-    @abstractmethod
-    def mm_return(self, return_value: R) -> None:
+    def on_exit(self, return_value: R) -> None:
         pass
+
+    async def async_on_enter(self, *args: P.args, **kwargs: P.kwargs) -> None:
+        pass
+
+    async def async_on_exit(self, return_value: R) -> None:
+        pass
+
 
 LIFECYCLE = TypeVar("LIFECYCLE", bound=LifeCycle)
-CALLER = TypeVar("CALLER", bound=LifeCycle)
-CALLEE = TypeVar("CALLEE", bound=LifeCycle)
 
 class BaseTracer(Generic[LIFECYCLE]):
     def __init__(self, manager: TracerManager[LIFECYCLE]) -> None:
@@ -48,22 +52,25 @@ class BaseTracer(Generic[LIFECYCLE]):
 
     def here(self) -> LIFECYCLE:
         prev_lifecycle = self.manager.app._prev_lifecycle
-        caller = prev_lifecycle.get()
-        assert caller is not None, "이는 반드시 tracer 함수 실행 중 존재하며, 실행 내부에서만 가져올 수 있다."
-        return caller  # type: ignore[return-value]
+        lc = prev_lifecycle.get()
+        assert lc is not None, "이는 반드시 tracer 함수 실행 중 존재하며, 실행 내부에서만 가져올 수 있다."
+        return lc  # type: ignore[return-value]
 
     def _setup(self, *args: Any, **kwds: Any) -> tuple[LIFECYCLE, ContextVar[LifeCycle|None]]:
         lifecycle_type = self.manager.lifecycle_type
         prev_lifecycle = self.manager.app._prev_lifecycle
         caller = prev_lifecycle.get()
 
-        lifecycle = lifecycle_type.create(caller, *args, **kwds)
+        lifecycle = lifecycle_type()
         lifecycle.caller = caller
+        lifecycle.args = args
+        lifecycle.kwargs = kwds
         if caller is not None:
             caller.callees.append(lifecycle)
 
         prev_lifecycle.set(lifecycle)
         return lifecycle, prev_lifecycle  # type: ignore[return-value]
+
 
 class Tracer(BaseTracer[LIFECYCLE], Generic[P, R, LIFECYCLE]):
     def __init__(self, func: Callable[P, R],
@@ -82,9 +89,11 @@ class Tracer(BaseTracer[LIFECYCLE], Generic[P, R, LIFECYCLE]):
 
     def __call__(self, *args: P.args, **kwds: P.kwargs) -> R:
         lifecycle, prev_lifecycle = self._setup(*args, **kwds)
+        lifecycle.on_enter(*args, **kwds)
         try:
             return_value = self.func(*args, **kwds)
-            lifecycle.mm_return(return_value)
+            lifecycle.return_value = return_value
+            lifecycle.on_exit(return_value)
             self._run_hooks(lifecycle)
             return return_value
         except Exception as e:
@@ -124,14 +133,16 @@ class AsyncTracer(BaseTracer[LIFECYCLE], Generic[P, R, LIFECYCLE]):
         for hook in self.async_exception_hooks:
             await hook(lifecycle)
 
-    def __call__(self, *args: P.args, **kwds: P.kwargs) -> Awaitable[R]:
+    def __call__(self, *args: P.args, **kwds: P.kwargs) -> Coroutine[Any, Any, R]:
         return self._async_call(*args, **kwds)
 
     async def _async_call(self, *args: Any, **kwds: Any) -> R:
         lifecycle, prev_lifecycle = self._setup(*args, **kwds)
+        await lifecycle.async_on_enter(*args, **kwds)
         try:
             return_value = await self.func(*args, **kwds)
-            lifecycle.mm_return(return_value)
+            lifecycle.return_value = return_value
+            await lifecycle.async_on_exit(return_value)
             await self._run_hooks(lifecycle)
             return return_value
         except Exception as e:

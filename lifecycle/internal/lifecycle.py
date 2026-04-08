@@ -157,17 +157,17 @@ class AsyncTracer(BaseTracer[LIFECYCLE], Generic[P, R, LIFECYCLE]):
 
 class TracerManager(Generic[LIFECYCLE]):
     def __init__(self, lifecycle_type: Type[LIFECYCLE], app: App) -> None:
-        self.tracer: list[BaseTracer[LIFECYCLE]] = []
+        self.tracers: list[BaseTracer[LIFECYCLE]] = []
         self.lifecycle_type = lifecycle_type
         self.app = app
         app.trace_managers.append(self)
 
     def tracing(self, func: Callable[P, R]) -> Tracer[P, R, LIFECYCLE]:
         tracer = Tracer(func, self)
-        self.tracer.append(tracer)
+        self.tracers.append(tracer)
         return tracer
 
     def async_tracing(self, func: Callable[P, Awaitable[R]]) -> AsyncTracer[P, R, LIFECYCLE]:
         tracer = AsyncTracer(func, self)
-        self.tracer.append(tracer)
+        self.tracers.append(tracer)
         return tracer

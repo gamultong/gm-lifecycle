@@ -5,10 +5,11 @@ from contextvars import ContextVar
 P = ParamSpec("P")
 R = TypeVar("R")
 
+
 class App:
     def __init__(self):
         self.trace_managers: list[TracerManager] = []
-        self._prev_lifecycle: ContextVar[LifeCycle|None] = ContextVar("__caller")
+        self._prev_lifecycle: ContextVar[LifeCycle | None] = ContextVar("__caller")
         self._prev_lifecycle.set(None)
 
 
@@ -36,6 +37,7 @@ class LifeCycle(Generic[P, R]):
 
 LIFECYCLE = TypeVar("LIFECYCLE", bound=LifeCycle)
 
+
 class BaseTracer(Generic[LIFECYCLE]):
     def __init__(self, manager: TracerManager[LIFECYCLE]) -> None:
         self.hooks: list[Callable[[LIFECYCLE], Any]] = []
@@ -56,7 +58,7 @@ class BaseTracer(Generic[LIFECYCLE]):
         assert lc is not None, "이는 반드시 tracer 함수 실행 중 존재하며, 실행 내부에서만 가져올 수 있다."
         return lc  # type: ignore[return-value]
 
-    def _setup(self, *args: Any, **kwds: Any) -> tuple[LIFECYCLE, ContextVar[LifeCycle|None]]:
+    def _setup(self, *args: Any, **kwds: Any) -> tuple[LIFECYCLE, ContextVar[LifeCycle | None]]:
         lifecycle_type = self.manager.lifecycle_type
         prev_lifecycle = self.manager.app._prev_lifecycle
         caller = prev_lifecycle.get()
@@ -69,13 +71,13 @@ class BaseTracer(Generic[LIFECYCLE]):
             caller.callees.append(lifecycle)
 
         prev_lifecycle.set(lifecycle)
-        return lifecycle, prev_lifecycle  # type: ignore[return-value]
+        return lifecycle, prev_lifecycle
 
 
 class Tracer(BaseTracer[LIFECYCLE], Generic[P, R, LIFECYCLE]):
     def __init__(self, func: Callable[P, R],
                  manager: TracerManager[LIFECYCLE]
-        ) -> None:
+                 ) -> None:
         super().__init__(manager)
         self.func = func
 
@@ -107,7 +109,7 @@ class Tracer(BaseTracer[LIFECYCLE], Generic[P, R, LIFECYCLE]):
 class AsyncTracer(BaseTracer[LIFECYCLE], Generic[P, R, LIFECYCLE]):
     def __init__(self, func: Callable[P, Awaitable[R]],
                  manager: TracerManager[LIFECYCLE]
-        ) -> None:
+                 ) -> None:
         super().__init__(manager)
         self.func = func
         self.async_hooks: list[Callable[[LIFECYCLE], Awaitable[Any]]] = []

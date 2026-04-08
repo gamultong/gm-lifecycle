@@ -17,23 +17,21 @@ pip install gm-lifecycle
 ```python
 from lifecycle import App, TracerManager, LifeCycle
 
-class MyLC(LifeCycle):
-    result: int = 0
+class MyLC(LifeCycle[[int, int], int]):
+    def on_enter(self, a: int, b: int) -> None:
+        self.operands = (a, b)
+
+    def on_exit(self, return_value: int) -> None:
+        print(f"{self.operands[0]} + {self.operands[1]} = {return_value}")
 
 app = App()
-manager = TracerManager(app, MyLC)
+manager = TracerManager(MyLC, app)
 
 @manager.tracing
 def add(a: int, b: int) -> int:
-    lc = add.here()
-    lc.result = a + b
-    return lc.result
+    return a + b
 
-def on_done(lc: MyLC):
-    print(f"결과: {lc.result}")
-
-add.add_hook(on_done)
-add(1, 2)  # 결과: 3
+add(1, 2)  # 1 + 2 = 3
 ```
 
 ## 문서

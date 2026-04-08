@@ -6,26 +6,13 @@ from lifecycle import TracerManager, LifeCycle, App, Tracer, AsyncTracer
 # ── Fixture ──────────────────────────────────────────────────────────────────
 
 class SampleLifeCycle(LifeCycle[[int, int], int]):
-    def __init__(self):
-        super().__init__()
-        self.arg: tuple
-        self.return_value: int
-        self.trace: str = ""
-
-    @classmethod
-    def create(cls, caller, arg1: int, arg2: int):
-        instance = cls()
-        instance.arg = (arg1, arg2)
-        return instance
-
-    def mm_return(self, return_value: int) -> None:
-        self.return_value = return_value
+    trace: str = ""
 
 
 @pytest.fixture
 def app_and_tm():
     app = App()
-    tm = TracerManager[[int, int], int, SampleLifeCycle](SampleLifeCycle, app)
+    tm = TracerManager(SampleLifeCycle, app)
     return app, tm
 
 
@@ -50,22 +37,21 @@ class TestSync:
 
         assert func(3, 5) == 8
 
-    def test_lifecycle_create(self, app_and_tm):
+    def test_args_captured(self, app_and_tm):
         _, tm = app_and_tm
         captured = {}
 
         @tm.tracing
         def func(arg1: int, arg2: int) -> int:
-            captured["lifecycle"] = func.here()
+            captured["lc"] = func.here()
             return arg1 + arg2
 
         func(3, 5)
-        assert captured["lifecycle"].arg == (3, 5)
-        assert captured["lifecycle"].return_value == 8
+        assert captured["lc"].args == (3, 5)
 
-    def test_mm_return(self, app_and_tm):
+    def test_return_value_captured(self, app_and_tm):
         _, tm = app_and_tm
-        hook_result = {}
+        captured = {}
 
         @tm.tracing
         def func(arg1: int, arg2: int) -> int:
@@ -73,10 +59,77 @@ class TestSync:
 
         @func.add_hook
         def hook(lc: SampleLifeCycle):
-            hook_result["return_value"] = lc.return_value
+            captured["return_value"] = lc.return_value
 
         func(3, 5)
-        assert hook_result["return_value"] == 8
+        assert captured["return_value"] == 8
+
+    def test_kwargs_captured(self, app_and_tm):
+        _, tm = app_and_tm
+        captured = {}
+
+        @tm.tracing
+        def func(arg1: int, arg2: int) -> int:
+            captured["lc"] = func.here()
+            return arg1 + arg2
+
+        func(arg1=3, arg2=5)
+        assert captured["lc"].kwargs == {"arg1": 3, "arg2": 5}
+
+    def test_on_enter_called(self, app_and_tm):
+        _, tm = app_and_tm
+        captured = {}
+
+        class EnterLC(LifeCycle[[int, int], int]):
+            def on_enter(self, arg1: int, arg2: int) -> None:
+                captured["entered"] = (arg1, arg2)
+
+        enter_tm = TracerManager(EnterLC, tm.app)
+
+        @enter_tm.tracing
+        def func(arg1: int, arg2: int) -> int:
+            return arg1 + arg2
+
+        func(3, 5)
+        assert captured["entered"] == (3, 5)
+
+    def test_on_enter_caller_already_set(self, app_and_tm):
+        _, tm = app_and_tm
+        captured = {}
+
+        class CallerCheckLC(LifeCycle[[int, int], int]):
+            def on_enter(self, arg1: int, arg2: int) -> None:
+                captured["caller_in_enter"] = self.caller
+
+        outer_tm = TracerManager(CallerCheckLC, tm.app)
+
+        @outer_tm.tracing
+        def outer(arg1: int, arg2: int) -> int:
+            return inner(arg1, arg2)
+
+        @outer_tm.tracing
+        def inner(arg1: int, arg2: int) -> int:
+            return arg1 + arg2
+
+        outer(3, 5)
+        assert captured["caller_in_enter"] is not None
+
+    def test_on_exit_called(self, app_and_tm):
+        _, tm = app_and_tm
+        captured = {}
+
+        class ExitLC(LifeCycle[[int, int], int]):
+            def on_exit(self, return_value: int) -> None:
+                captured["exited"] = return_value
+
+        exit_tm = TracerManager(ExitLC, tm.app)
+
+        @exit_tm.tracing
+        def func(arg1: int, arg2: int) -> int:
+            return arg1 + arg2
+
+        func(3, 5)
+        assert captured["exited"] == 8
 
     def test_caller_callee_link(self, app_and_tm):
         _, tm = app_and_tm
@@ -280,8 +333,8 @@ class TestSync:
     def test_app_isolation(self):
         app1 = App()
         app2 = App()
-        tm1 = TracerManager[[int, int], int, SampleLifeCycle](SampleLifeCycle, app1)
-        tm2 = TracerManager[[int, int], int, SampleLifeCycle](SampleLifeCycle, app2)
+        tm1 = TracerManager(SampleLifeCycle, app1)
+        tm2 = TracerManager(SampleLifeCycle, app2)
         captured = {}
 
         @tm1.tracing
@@ -322,18 +375,18 @@ class TestAsync:
         assert await func(3, 5) == 8
 
     @pytest.mark.asyncio
-    async def test_lifecycle_create(self, app_and_tm):
+    async def test_args_captured(self, app_and_tm):
         _, tm = app_and_tm
         captured = {}
 
         @tm.async_tracing
         async def func(arg1: int, arg2: int) -> int:
-            captured["lifecycle"] = func.here()
+            captured["lc"] = func.here()
             return arg1 + arg2
 
         await func(3, 5)
-        assert captured["lifecycle"].arg == (3, 5)
-        assert captured["lifecycle"].return_value == 8
+        assert captured["lc"].args == (3, 5)
+        assert captured["lc"].return_value == 8
 
     @pytest.mark.asyncio
     async def test_caller_callee_link(self, app_and_tm):
@@ -548,5 +601,5 @@ class TestAsync:
             return arg1 + arg2
 
         await asyncio.gather(func(1, 2), func(3, 4))
-        assert captured[1].arg == (1, 2)
-        assert captured[3].arg == (3, 4)
+        assert captured[1].args == (1, 2)
+        assert captured[3].args == (3, 4)
